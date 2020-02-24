@@ -1,0 +1,271 @@
+---
+title: "Farmers Market Analysis"
+author: "Hongzhao Ma"
+date: "2/17/2020"
+output: html_document
+---
+
+```{r}
+# Project 1
+# Hongzhao Ma
+# Section 03
+# Load the packages and read the data file
+library(ggplot2)
+library(dplyr)
+library(treemapify)
+library(lubridate)
+library(tidyr)
+library(stringr)
+library(RColorBrewer)
+library(usmap)
+library(scales)
+library(gridExtra)
+fmarket <- read.csv("fmarket.csv", header = T, stringsAsFactors = FALSE)
+```
+
+```{r}
+# Clean the data
+# Split the dates in season1
+season_1_date <- as.data.frame(str_split(as.character(fmarket$Season1Date), " to ", simplify = T))
+season_1_date <- as.data.frame(lapply(season_1_date, mdy))
+
+# Generate the opening year of the markets using Season1Date and updateTime
+fmarket$updateTime[which(str_length(fmarket$updateTime) == 4)] <- paste0("0101", fmarket$updateTime[which(str_length(fmarket$updateTime) == 4)], "100000")
+fmarket$updateTime <- date(mdy_hms(fmarket$updateTime))
+fmarket$year <- year(season_1_date$V1)
+fmarket[which(is.na(fmarket$year) == TRUE), 60] <- year(fmarket[which(is.na(fmarket$year) == TRUE), 59])
+fmarket <- fmarket[, -c(13:20)]
+
+# Convert the media information to 1 or 0, 1 denotes yes and 0 denotes no.
+fmarket[3:7] <- lapply(fmarket[3:7], as.character)
+for (i in 3:7) {
+  fmarket[[i]][fmarket[[i]] != ""] <- 1
+}
+for (i in 3:7) {
+  fmarket[[i]][fmarket[[i]] == ""] <- 0
+}
+
+# Convert the products information to 1 or 0, 1 denotes yes and 0 denotes no.
+fmarket[16:50] <- lapply(fmarket[16:50], as.character)
+for (i in 16:50) {
+  fmarket[[i]][fmarket[[i]] %in% "Y"] <- 1
+}
+for (i in 16:50) {
+  fmarket[[i]][fmarket[[i]] %in% "N"] <- 0
+}
+for (i in 16:50) {
+  fmarket[[i]][fmarket[[i]] %in% "-"] <- NA
+}
+```
+
+```{r}
+# Figure 1.1 Plot the amounts of markets by year
+# Import the windows fonts
+windowsFonts("Arial" = windowsFont("Arial"))
+windowsFonts("Times New Roman" = windowsFont("Times New Roman"))
+windowsFonts("bold.italic" = windowsFont("bold.italic"))
+# Calculate the cumulative markets
+fmarket$year <- as.factor(fmarket$year)
+fmarket_count <- fmarket %>%
+  group_by(year) %>%
+  summarise(Count = n())
+fmarket_count$cum_count <- cumsum(fmarket_count$Count)
+# Plot the total number of markets
+p1 <- fmarket_count %>%
+  ggplot(aes(x = year, y = cum_count)) + geom_bar(stat = "identity", fill = "#005582") + geom_text(aes(label = cum_count), vjust = 1.6, color = "white", size = 4.0) + xlab("Year") + ylab("Number of Markets") + ggtitle("Number of Total Markets by Year")
+p1 + theme(plot.title = element_text(family = "Times New Roman", color = "black", size = 17, hjust = 0.5), axis.title = element_text(family = "Times New Roman", size = 15), axis.text = element_text(family = "Times New Roman", size = 14))
+ggsave("barplot_markets.png", device = "png", width = 8, height = 4.5, dpi = 300)
+```
+
+```{r}
+# Figure 1.2 Map the locations of markets
+# Load the geographic dataset
+us_states <- usmap::us_map()
+colnames(us_states)[9] <- "State"
+us_states[1:2] <- us_states[1:2]
+locations <- fmarket %>%
+  group_by(State) %>%
+  drop_na() %>%
+  summarise(Count = n())
+# Merger two data set together
+fmarket_location <- left_join(us_states, locations, by = "State")
+# Map the locations of the markets
+p2 <- ggplot(data = fmarket_location, aes(x = x, y = y, group = group, fill = Count)) + ggtitle("Locations of Markets") + xlab("Longitude") + ylab("Latitude")
+p2 + geom_polygon(color = "white", size = 0.2) + scale_fill_gradient(low = "#33A1C9", high = "#191970") + theme(plot.title = element_text(family = "Times New Roman", color = "black", size = 17, hjust = 0.5), axis.title = element_text(family = "Times New Roman", size = 15), axis.text = element_blank(), legend.text = element_text(family = "Times New Roman", size = 14), legend.title = element_text(family = "Times New Roman", color = "black", size = 15))
+ggsave("map_marketslocation.png", device = "png", width = 8, height = 4.5, dpi = 300)
+```
+
+```{r}
+# Figure 2.1 Draw the pie chart of the type of payments
+payments <- gather(fmarket, "payment_type", "Yes_or_No", 16:20)
+payments$Yes_or_No <- as.integer(payments$Yes_or_No)
+pie_payment <- payments %>%
+  group_by(payment_type) %>%
+  summarise(Count = sum(Yes_or_No))
+pct <- round(pie_payment$Count / sum(pie_payment$Count) * 100)
+pie_payment$lbls <- paste(pie_payment$payment_type, pct)
+pie_payment$lbls <- paste(pie_payment$lbls, "%", sep = "")
+colour <- brewer.pal(5, "Set2")
+pie(pie_payment$Count, labels = pie_payment$lbls, col = colour, main = "Pie Chart of Payment Methods")
+ggsave("pie_payment.png", pie(pie_payment$Count, labels = pie_payment$lbls, col = colour, main = "Pie Chart of Payment Methods"), device = "png", width = 8, height = 4.5, dpi = 300)
+```
+
+```{r}
+# Figure 2.2 Plot the number of credit payment
+credit <- payments[payments$payment_type == "Credit", ] %>%
+  group_by(year) %>%
+  summarise(Count = sum(Yes_or_No))
+credit$cum_count <- cumsum(credit$Count)
+p3 <- credit %>%
+  ggplot(aes(x = year, y = cum_count)) + geom_bar(stat = "identity", fill = "#005582") + geom_text(aes(label = cum_count), vjust = -0.3, color = "black", size = 4.0) + xlab("Year") + ylab("Number of Markets") + ggtitle("Number of Markets using Credit by Year")
+p3 + theme(plot.title = element_text(family = "Times New Roman", color = "black", size = 17, hjust = 0.5), axis.title = element_text(family = "Times New Roman", size = 15), axis.text = element_text(family = "Times New Roman", size = 14))
+ggsave("barplot_credit.png", device = "png", width = 8, height = 4.5, dpi = 300)
+```
+
+```{r}
+# Figure 2.3 Plot the number of SFMNP payment
+SFMNP <- payments[payments$payment_type == "SFMNP", ] %>%
+  group_by(year) %>%
+  summarise(Count = sum(Yes_or_No))
+SFMNP$cum_count <- cumsum(SFMNP$Count)
+p4 <- SFMNP %>%
+  ggplot(aes(x = year, y = cum_count)) + geom_bar(stat = "identity", fill = "#005582") + geom_text(aes(label = cum_count), vjust = -0.3, color = "black", size = 4.0) + xlab("Year") + ylab("Number of Markets") + ggtitle("Number of SFMNP Markets by Year")
+p4 + theme(plot.title = element_text(family = "Times New Roman", color = "black", size = 17, hjust = 0.5), axis.title = element_text(family = "Times New Roman", size = 15), axis.text = element_text(family = "Times New Roman", size = 14))
+ggsave("barplot_SFMNP.png", device = "png", width = 8, height = 4.5, dpi = 300)
+```
+
+```{r}
+# Figure 2.4 Plot the number of SNAP payment
+SNAP <- payments[payments$payment_type == "SNAP", ] %>%
+  group_by(year) %>%
+  summarise(Count = sum(Yes_or_No))
+SNAP$cum_count <- cumsum(SNAP$Count)
+p5 <- SNAP %>%
+  ggplot(aes(x = year, y = cum_count)) + geom_bar(stat = "identity", fill = "#005582") + geom_text(aes(label = cum_count), vjust = -0.3, color = "black", size = 4.0) + xlab("Year") + ylab("Number of Markets") + ggtitle("Number of SNAP Markets by Year")
+p5 + theme(plot.title = element_text(family = "Times New Roman", color = "black", size = 17, hjust = 0.5), axis.title = element_text(family = "Times New Roman", size = 15), axis.text = element_text(family = "Times New Roman", size = 14))
+ggsave("barplot_SNAP.png", device = "png", width = 8, height = 4.5, dpi = 300)
+```
+
+```{r}
+# Figure 2.5 Plot of the numbers of WIC and WICcash payments
+WIC <- payments %>%
+  filter(payment_type == "WIC" | payment_type == "WICcash") %>%
+  group_by(year, payment_type) %>%
+  summarise(Count = sum(Yes_or_No))
+WIC_cum <- WIC %>%
+  group_by(payment_type) %>%
+  mutate(cum_count = cumsum(Count))
+p6 <- WIC_cum %>%
+  ggplot(aes(x = year, y = cum_count, fill = payment_type)) + geom_bar(stat = "identity") + xlab("Year") + ylab("Number of Markets") + ggtitle("Number of WIC Markets by Year") + scale_fill_discrete(name = "Type of Payments")
+p6 + theme(plot.title = element_text(family = "Times New Roman", color = "black", size = 17, hjust = 0.5), axis.title = element_text(family = "Times New Roman", size = 15), axis.text = element_text(family = "Times New Roman", size = 14), legend.text = element_text(family = "Times New Roman", size = 14), legend.title = element_text(family = "Times New Roman", size = 14))
+ggsave("barplot_WIC.png", device = "png", width = 8, height = 4.5, dpi = 300)
+```
+
+```{r}
+# Figure 3.1 Tree map of the products
+getPalette <- colorRampPalette(brewer.pal(10, "Paired"))
+products <- gather(fmarket, "product_type", "Yes_or_No", 21:50)
+products$Yes_or_No <- as.integer(products$Yes_or_No)
+p7 <- products %>%
+  group_by(product_type) %>%
+  drop_na() %>%
+  summarise(Count = sum(Yes_or_No)) %>%
+  ggplot(aes(area = Count, label = product_type, fill = product_type)) + geom_treemap(colour = "white", size = 2.0) + geom_treemap_text(fontface = "bold.italic", colour = "white", place = "centre", grow = FALSE) + ggtitle("Tree Maps of Products")
+
+p7 + theme(plot.title = element_text(family = "Times New Roman", size = 17, hjust = 0.5)) + scale_fill_manual(values = getPalette(32)) + guides(fill = FALSE)
+ggsave("Treemap_productstype.png", device = "png", width = 8, height = 4.5, dpi = 300)
+```
+
+```{r}
+# Figure 3.2 Draw the heat map of the top 10 products
+products_sum <- products %>%
+  group_by(product_type) %>%
+  drop_na() %>%
+  summarise(Count = sum(Yes_or_No))
+top10_label <- products_sum[order(products_sum$Count, decreasing = T), ][1:10, 1]
+product_top10 <- products %>%
+  filter(product_type %in% top10_label$product_type) %>%
+  group_by(product_type, year) %>%
+  summarise(Count = sum(Yes_or_No))
+p8 <- product_top10 %>%
+  ggplot(aes(product_type, year, fill = Count)) + geom_tile() + xlab("Type of Products") + ylab("Year") + ggtitle("Heat Map of Top 10 products by Year") + scale_fill_gradient(low = "#008080", high = "#000080")
+p8 + theme(plot.title = element_text(family = "Times New Roman", color = "black", size = 17, hjust = 0.5), axis.title = element_text(family = "Times New Roman", size = 15), axis.text.x = element_text(angle = 45, family = "Times New Roman", size = 14, hjust = 1), axis.text.y = element_text(family = "Times New Roman", size = 14), legend.text = element_text(family = "Times New Roman", size = 14), legend.title = element_text(family = "Times New Roman", size = 14))
+ggsave("Heatmap_productstop10.png", device = "png", width = 8, height = 4.5, dpi = 300)
+```
+
+```{r}
+# Figure 4.1 Plot the pie chart of media
+media <- gather(fmarket, "media_type", "Yes_or_No", 3:7)
+media$Yes_or_No <- as.integer(media$Yes_or_No)
+pie_media <- media %>%
+  group_by(media_type) %>%
+  drop_na() %>%
+  summarise(Count = sum(Yes_or_No))
+
+pie_media <- pie_media[order(pie_media$Count, decreasing = T), ]
+pct <- round(pie_media$Count / sum(pie_media$Count) * 100)
+pie_media$lbls <- paste(pie_media$media_type, pct)
+pie_media$lbls <- paste(pie_media$lbls, "%", sep = "")
+colour <- brewer.pal(5, "Set2")
+pie(pie_media$Count, labels = pie_media$lbls, col = colour, main = "Pie Chart of Online Social Media")
+ggsave("pie_media.png", pie(pie_media$Count, labels = pie_media$lbls, col = colour, main = "Pie Chart of Online Social Media"), device = "png", width = 8, height = 4.5, dpi = 300)
+```
+
+```{r}
+# Plot the locations of facebook
+media_sum <- media %>%
+  group_by(State, media_type) %>%
+  drop_na() %>%
+  summarise(Count = sum(Yes_or_No)) %>%
+  mutate(Percent = round(Count / sum(Count) * 100))
+media_location <- left_join(us_states, media_sum, by = "State")
+Facebook <- media_location %>%
+  filter(media_type == "Facebook")
+p9 <- Facebook %>%
+  ggplot(aes(x = x, y = y, group = group, fill = Percent)) + ggtitle("Locations of Facebook") + xlab("Longitude") + ylab("Latitude") + geom_polygon(color = "white", size = 0.2) + scale_fill_gradient(low = "#33A1C9", high = "#3b5998") + theme(plot.title = element_text(family = "Times New Roman", color = "black", size = 17, hjust = 0.5), axis.title = element_text(family = "Times New Roman", size = 15), axis.text = element_blank(), legend.text = element_text(family = "Times New Roman", size = 14), legend.title = element_text(family = "Times New Roman", color = "black", size = 15))
+p9
+ggsave("map_facebooklocation.png", device = "png", width = 8, height = 4.5, dpi = 300)
+```
+```{r}
+# Plot the locations of youtube
+youtube <- media_location %>%
+  filter(media_type == "Youtube")
+p10 <- youtube %>%
+  ggplot(aes(x = x, y = y, group = group, fill = Percent)) + ggtitle("Locations of Youtube") + xlab("Longitude") + ylab("Latitude") + geom_polygon(color = "white", size = 0.2) + scale_fill_gradient(low = "#ebae34", high = "#FF0000") + theme(plot.title = element_text(family = "Times New Roman", color = "black", size = 17, hjust = 0.5), axis.title = element_text(family = "Times New Roman", size = 15), axis.text = element_blank(), legend.text = element_text(family = "Times New Roman", size = 14), legend.title = element_text(family = "Times New Roman", color = "black", size = 15))
+p10
+ggsave("map_youtubelocation.png", device = "png", width = 8, height = 4.5, dpi = 300)
+```
+```{r}
+# Plot the locations of twitter
+twitter <- media_location %>%
+  filter(media_type == "Twitter")
+p11 <- twitter %>%
+  ggplot(aes(x = x, y = y, group = group, fill = Percent)) + ggtitle("Locations of Twitter") + xlab("Longitude") + ylab("Latitude") + geom_polygon(color = "white", size = 0.2) + scale_fill_gradient(low = "#34d8eb", high = "#00acee") + theme(plot.title = element_text(family = "Times New Roman", color = "black", size = 17, hjust = 0.5), axis.title = element_text(family = "Times New Roman", size = 15), axis.text = element_blank(), legend.text = element_text(family = "Times New Roman", size = 14), legend.title = element_text(family = "Times New Roman", color = "black", size = 15))
+p11
+ggsave("map_twitterlocation.png", device = "png", width = 8, height = 4.5, dpi = 300)
+```
+
+```{r}
+# Plot the locations of website
+website <- media_location %>%
+  filter(media_type == "Website")
+p12 <- website %>%
+  ggplot(aes(x = x, y = y, group = group, fill = Percent)) + ggtitle("Locations of Website") + xlab("Longitude") + ylab("Latitude") + geom_polygon(color = "white", size = 0.2) + scale_fill_gradient(low = "#83eb34", high = "#3cba54") + theme(plot.title = element_text(family = "Times New Roman", color = "black", size = 17, hjust = 0.5), axis.title = element_text(family = "Times New Roman", size = 15), axis.text = element_blank(), legend.text = element_text(family = "Times New Roman", size = 14), legend.title = element_text(family = "Times New Roman", color = "black", size = 15))
+p12
+ggsave("map_websitelocation.png", device = "png", width = 8, height = 4.5, dpi = 300)
+```
+
+```{r}
+# Plot the locations of other media
+othermedia <- media_location %>%
+  filter(media_type == "OtherMedia")
+p13 <- othermedia %>%
+  ggplot(aes(x = x, y = y, group = group, fill = Percent)) + ggtitle("Locations of Other Media") + xlab("Longitude") + ylab("Latitude") + geom_polygon(color = "white", size = 0.2) + scale_fill_gradient(low = "#eb34dc", high = "#6e34eb") + theme(plot.title = element_text(family = "Times New Roman", color = "black", size = 17, hjust = 0.5), axis.title = element_text(family = "Times New Roman", size = 15), axis.text = element_blank(), legend.text = element_text(family = "Times New Roman", size = 14), legend.title = element_text(family = "Times New Roman", color = "black", size = 15))
+p13
+ggsave("map_othermedialocation.png", device = "png", width = 8, height = 4.5, dpi = 300)
+```
+```{r}
+# Figure 4.2 Plot all the media location maps together
+p_total <- grid.arrange(p9, p12, p13, p11, p10, ncol = 2)
+ggsave("media_map.png", device = "png", p_total, width = 8, height = 9, dpi = 300)
+```
