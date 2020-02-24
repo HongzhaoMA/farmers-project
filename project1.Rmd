@@ -226,6 +226,7 @@ p9 <- Facebook %>%
 p9
 ggsave("map_facebooklocation.png", device = "png", width = 8, height = 4.5, dpi = 300)
 ```
+
 ```{r}
 # Plot the locations of youtube
 youtube <- media_location %>%
@@ -235,6 +236,7 @@ p10 <- youtube %>%
 p10
 ggsave("map_youtubelocation.png", device = "png", width = 8, height = 4.5, dpi = 300)
 ```
+
 ```{r}
 # Plot the locations of twitter
 twitter <- media_location %>%
@@ -264,6 +266,7 @@ p13 <- othermedia %>%
 p13
 ggsave("map_othermedialocation.png", device = "png", width = 8, height = 4.5, dpi = 300)
 ```
+
 ```{r}
 # Figure 4.2 Plot all the media location maps together
 p_total <- grid.arrange(p9, p12, p13, p11, p10, ncol = 2)
